@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor Lights — Find 7 Differences</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13'>⚓</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>⚓ Harbor Lights</h1>
+    <p class="tagline">Find 7 differences — two harbor scenes, side by side</p>
+  </header>
+
+  <div id="hud">
+    <span id="hud-round" class="hud-pill">Round 1 — Golden Hour</span>
+    <span id="hud-found" class="hud-pill found">Found 0 / 7</span>
+    <span id="hud-timer" class="hud-pill">⏱ 150s</span>
+    <span id="hud-score" class="hud-pill">★ 0</span>
+    <button id="hint-btn" class="hud-btn">💡 Hint (3)</button>
+    <button id="mute-btn" class="hud-btn">🔊 Sound</button>
+  </div>
+
+  <div id="panels">
+    <figure class="panel">
+      <figcaption>LEFT — Original</figcaption>
+      <canvas id="panel-left" width="560" height="420"></canvas>
+    </figure>
+    <figure class="panel">
+      <figcaption>RIGHT — Changed</figcaption>
+      <canvas id="panel-right" width="560" height="420"></canvas>
+    </figure>
+  </div>
+
+  <footer>
+    <span>Click a difference on either picture — a green ring marks it on both.</span>
+    <span class="keys">Keys: <b>H</b> hint &nbsp; <b>N</b> next round &nbsp; <b>R</b> restart &nbsp; <b>M</b> mute</span>
+  </footer>
+
+  <div id="title-screen" class="overlay">
+    <div class="card">
+      <h2>⚓ Harbor Lights</h2>
+      <p class="howto">Two harbor scenes hang side by side — but 7 things changed in the right one.
+        Click every difference before the timer runs out. A right click rings it green
+        and scores 100 points; a wrong click costs 5 seconds. Hints cost 50 points.</p>
+      <p class="rounds">3 rounds: Golden Hour (150s) · Night Market (120s) · Storm Watch (100s)</p>
+      <button id="start-btn" class="big-btn">▶ Start playing</button>
+    </div>
+  </div>
+
+  <div id="clear-screen" class="overlay hidden">
+    <div class="card">
+      <h2 id="clear-title">Round Clear!</h2>
+      <p>Found: <b id="clear-found">7 / 7</b> &nbsp;·&nbsp; Time left: <b id="clear-time">0s</b></p>
+      <p>Time bonus: <b id="clear-bonus">+0</b> &nbsp;·&nbsp; Total score: <b id="clear-score">0</b></p>
+      <button id="next-btn" class="big-btn">Next round →</button>
+      <button id="retry-btn" class="small-btn">Replay this round</button>
+    </div>
+  </div>
+
+  <div id="final-screen" class="overlay hidden">
+    <div class="card">
+      <h2>🎉 You found them all!</h2>
+      <p>Final score: <b id="final-score">0</b></p>
+      <p>Best round score: <b id="final-best">0</b> &nbsp;·&nbsp; Rounds cleared: <b id="final-rounds">0 / 3</b></p>
+      <p>Total time played: <b id="final-time">0s</b></p>
+      <button id="again-btn" class="big-btn">↻ Play again</button>
+    </div>
+  </div>
+
+  <div id="timeout-screen" class="overlay hidden">
+    <div class="card">
+      <h2>⏱ Time's up!</h2>
+      <p>You found <b id="timeout-found">0</b> of 7 differences this round.</p>
+      <p>Take another look — the harbor is patient.</p>
+      <button id="timeout-retry-btn" class="big-btn">↻ Try this round again</button>
+    </div>
+  </div>
+</div>
+<script src="audio.js"></script>
+<script src="scene.js"></script>
+<script src="game.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
