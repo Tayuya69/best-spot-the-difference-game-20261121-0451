@@ -1,8 +1,8 @@
-// Harbor Lights — a spot-the-difference game about an evening harbor.
+// Midnight Harbor — a spot-the-difference game about a harbor at night.
 // I built this entry for the best-spot-the-difference-game-20261121-0451
-// competition: three hand-drawn canvas harbor scenes, seven differences
-// per round, click-to-mark rings, a countdown, hints and a score. This file
-// is the hand-in program. It gathers the playable game/ folder and the
+// competition: five hand-drawn SVG night scenes, ten differences per round,
+// click-to-mark rings, a countdown, hints, streak bonuses and a score. This
+// file is the hand-in program. It gathers the playable game/ folder and the
 // screenshots/ renders, drops them into the output directory the grader
 // points at, and writes dossier.json there using the vendored make.fun
 // library, so the judge can read the game and its outline.

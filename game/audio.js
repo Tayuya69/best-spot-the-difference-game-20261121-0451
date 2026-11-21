@@ -1,63 +1,37 @@
-// Harbor Lights — tiny WebAudio synth. No audio files, everything is
-// generated with oscillators. Mute is a simple on/off flag.
-'use strict';
-
-const SoundFX = {
-  muted: false,
-  ctx: null,
-
-  ensure() {
-    if (!this.ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      this.ctx = new AC();
+// Midnight Harbor — tiny WebAudio bleeps, synthesized live, no audio files.
+var HarborAudio = (function () {
+  var ctx = null;
+  var muted = false;
+  function ensure() {
+    if (!ctx) {
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ctx = null; }
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    return this.ctx;
-  },
-
-  tone(freq, start, dur, type, vol) {
-    if (this.muted) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type || 'sine';
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
-    gain.gain.exponentialRampToValueAtTime(vol || 0.12, ctx.currentTime + start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(ctx.currentTime + start);
-    osc.stop(ctx.currentTime + start + dur + 0.05);
-  },
-
-  // Two-note pleasant chime when a difference is found.
-  chime() {
-    this.tone(880, 0, 0.18, 'sine', 0.14);
-    this.tone(1318.5, 0.09, 0.28, 'sine', 0.12);
-  },
-
-  // Low buzz when the player clicks somewhere with no difference.
-  buzz() {
-    this.tone(140, 0, 0.22, 'sawtooth', 0.08);
-    this.tone(110, 0.05, 0.2, 'sawtooth', 0.06);
-  },
-
-  // Soft click for the hint button.
-  click() {
-    this.tone(660, 0, 0.07, 'triangle', 0.08);
-  },
-
-  // Little arpeggio when a round is cleared.
-  fanfare() {
-    const notes = [523.25, 659.25, 783.99, 1046.5];
-    notes.forEach((n, i) => this.tone(n, i * 0.12, 0.3, 'triangle', 0.12));
-  },
-
-  toggleMute() {
-    this.muted = !this.muted;
-    return this.muted;
-  },
-};
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tone(freq, start, dur, type, vol) {
+    if (muted) return;
+    var c = ensure();
+    if (!c) return;
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, c.currentTime + start);
+    g.gain.exponentialRampToValueAtTime(vol || 0.12, c.currentTime + start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + start + dur);
+    o.connect(g).connect(c.destination);
+    o.start(c.currentTime + start);
+    o.stop(c.currentTime + start + dur + 0.05);
+  }
+  return {
+    get muted() { return muted; },
+    toggleMute: function () { muted = !muted; return muted; },
+    chime: function () { tone(880, 0, 0.16); tone(1318, 0.09, 0.22); },
+    buzz: function () { tone(140, 0, 0.25, 'square', 0.08); },
+    tick: function () { tone(1200, 0, 0.05, 'sine', 0.04); },
+    fanfare: function () {
+      tone(523, 0, 0.18); tone(659, 0.12, 0.18); tone(784, 0.24, 0.18); tone(1046, 0.36, 0.4);
+    }
+  };
+})();

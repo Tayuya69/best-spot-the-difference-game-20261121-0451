@@ -1,287 +1,309 @@
-// Harbor Lights — game state and rules.
-// Owns the current round, the found set, the countdown, the score, hints,
-// click hit-testing, markers, round clear and the final screen.
+// Midnight Harbor — game state and rules.
+// Owns the current round, the found set, the countdown, the score, the
+// streak, hints, click hit-testing against difference hotspots, markers,
+// round clear, the final screen and the ?round=&screen=&found= shot states.
 'use strict';
 
-const HarborGame = {
-  roundIndex: 0,
-  found: [],        // diff objects found this round
-  wrongMarks: [],   // {x, y, at} red X marks, drawn briefly
-  score: 0,
-  hintsLeft: 3,
-  timeLeft: 0,
-  timerId: null,
-  pulse: null,      // diff being hint-pulsed, or null
-  pulseUntil: 0,
-  roundDone: false,
-  gameOver: false,
-  roundScores: [],
-  totalTimeUsed: 0,
-  started: false,
+var HarborGame = (function () {
+  var HIT_RADIUS = 26;
+  var state = {
+    roundIdx: 0, scene: null, found: {}, foundCount: 0,
+    score: 0, streak: 0, timeLeft: 0, hintsLeft: 3, hintIdx: null,
+    phase: 'title', timerId: null
+  };
 
-  els: {},
+  var $ = function (id) { return document.getElementById(id); };
 
-  init(els) {
-    this.els = els;
-    this.bind(els);
-    this.showTitle();
-  },
+  function fmtTime(s) {
+    s = Math.max(0, Math.ceil(s));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
 
-  bind(els) {
-    const self = this;
-    els.left.addEventListener('click', (e) => self.onPanelClick(e, els.left));
-    els.right.addEventListener('click', (e) => self.onPanelClick(e, els.right));
-    els.hintBtn.addEventListener('click', () => self.useHint());
-    els.muteBtn.addEventListener('click', () => self.toggleMute());
-    els.startBtn.addEventListener('click', () => self.startGame());
-    els.nextBtn.addEventListener('click', () => self.nextRound());
-    els.retryBtn.addEventListener('click', () => self.restartRound());
-    els.againBtn.addEventListener('click', () => self.startGame());
-    els.playAgainTimeoutBtn.addEventListener('click', () => self.restartRound());
-    document.addEventListener('keydown', (e) => self.onKey(e));
-  },
+  function ringMarkup(x, y, cls) {
+    return '<circle class="' + cls + '" cx="' + x + '" cy="' + y + '" r="24"/>' +
+      '<path class="ring-check" d="M' + (x - 10) + ' ' + y + ' l7 7 l13 -14"/>';
+  }
 
-  currentRound() {
-    return ROUNDS[this.roundIndex];
-  },
+  function paint() {
+    var scene = state.scene;
+    if (!scene) return;
+    var marksL = '', marksR = '';
+    for (var i = 0; i < scene.diffs.length; i++) {
+      if (!state.found[i]) continue;
+      var d = scene.diffs[i];
+      marksL += ringMarkup(d.spots[0][0], d.spots[0][1], 'ring');
+      marksR += ringMarkup(d.spots[0][0], d.spots[0][1], 'ring');
+    }
+    if (state.hintIdx !== null && !state.found[state.hintIdx]) {
+      var hd = scene.diffs[state.hintIdx];
+      var hintMark = '<circle class="hint-ring" cx="' + hd.spots[0][0] + '" cy="' + hd.spots[0][1] + '" r="24"/>';
+      marksL += hintMark;
+      marksR += hintMark;
+    }
+    $('svgL').innerHTML = renderScene(scene, 0, 'L') + marksL;
+    $('svgR').innerHTML = renderScene(scene, 1, 'R') + marksR;
+    $('roundName').textContent = scene.name;
+    $('roundNum').textContent = (state.roundIdx + 1) + ' / ' + SCENES.length;
+    $('foundCount').textContent = state.foundCount + ' / ' + scene.diffs.length;
+    var t = $('timeLeft');
+    t.textContent = fmtTime(state.timeLeft);
+    t.classList.toggle('low', state.timeLeft <= 30 && state.phase === 'play');
+    $('score').textContent = state.score;
+    $('streak').textContent = '×' + state.streak;
+    $('hintsLeft').textContent = state.hintsLeft;
+    $('hintBtn').disabled = state.hintsLeft <= 0 || state.phase !== 'play';
+    var dots = '';
+    for (var j = 0; j < scene.diffs.length; j++) {
+      dots += '<span class="dot' + (state.found[j] ? ' found' : '') + (j === state.hintIdx ? ' hinted' : '') + '"></span>';
+    }
+    $('diffDots').innerHTML = dots;
+  }
 
-  allDiffs() {
-    return this.currentRound().diffs;
-  },
+  function showOverlay(html) {
+    $('overlayCard').innerHTML = html;
+    $('overlay').classList.remove('hidden');
+  }
+  function hideOverlay() { $('overlay').classList.add('hidden'); }
 
-  unfound() {
-    const ids = new Set(this.found.map((d) => d.id));
-    return this.allDiffs().filter((d) => !ids.has(d.id));
-  },
+  function stopTimer() {
+    if (state.timerId) { clearInterval(state.timerId); state.timerId = null; }
+  }
+  function startTimer() {
+    stopTimer();
+    state.timerId = setInterval(function () {
+      if (state.phase !== 'play') return;
+      state.timeLeft -= 1;
+      if (state.timeLeft <= 10 && state.timeLeft > 0) HarborAudio.tick();
+      if (state.timeLeft <= 0) { state.timeLeft = 0; paint(); timeUp(); return; }
+      paint();
+    }, 1000);
+  }
 
-  startGame() {
-    this.score = 0;
-    this.roundScores = [];
-    this.totalTimeUsed = 0;
-    this.gameOver = false;
-    this.hideAllOverlays();
-    this.loadRound(0);
-    this.started = true;
-  },
+  function startRound(idx, keepScore) {
+    state.roundIdx = idx;
+    state.scene = buildScene(idx);
+    state.found = {};
+    state.foundCount = 0;
+    state.streak = 0;
+    state.timeLeft = state.scene.timer;
+    state.hintsLeft = 3;
+    state.hintIdx = null;
+    state.phase = 'play';
+    if (!keepScore) state.score = 0;
+    hideOverlay();
+    paint();
+    startTimer();
+  }
 
-  loadRound(i) {
-    this.roundIndex = i;
-    this.found = [];
-    this.wrongMarks = [];
-    this.hintsLeft = 3;
-    this.pulse = null;
-    this.roundDone = false;
-    this.timeLeft = this.currentRound().timer;
-    this.hideAllOverlays();
-    this.updateHud();
-    this.render();
-    this.startTimer();
-  },
+  function markFound(idx) {
+    state.found[idx] = true;
+    state.foundCount += 1;
+    var gained = 100 + state.streak * 25;
+    state.streak += 1;
+    state.score += gained;
+    HarborAudio.chime();
+    paint();
+    if (state.foundCount >= state.scene.diffs.length) roundClear();
+  }
 
-  restartRound() {
-    this.loadRound(this.roundIndex);
-  },
+  function roundClear() {
+    stopTimer();
+    state.phase = 'clear';
+    var bonus = state.timeLeft * 10;
+    state.score += bonus;
+    HarborAudio.fanfare();
+    paint();
+    var last = state.roundIdx >= SCENES.length - 1;
+    var html = '<h2>ROUND CLEAR!</h2>' +
+      '<p class="big">' + state.scene.name + ' — all 10 differences found</p>' +
+      '<p>Time bonus: +' + bonus + ' &nbsp;·&nbsp; Score: ' + state.score + '</p>';
+    if (last) {
+      html += '<p>That was the last pier of the night. The whole harbor is yours.</p>' +
+        '<button id="ovNext" type="button">SEE FINAL SCORE</button>';
+    } else {
+      html += '<button id="ovNext" type="button">NEXT ROUND →</button>';
+    }
+    html += '<button id="ovAgain" type="button" class="ghost">Replay round</button>';
+    showOverlay(html);
+    $('ovNext').onclick = function () {
+      if (last) victory(); else startRound(state.roundIdx + 1, true);
+    };
+    $('ovAgain').onclick = function () { startRound(state.roundIdx, true); };
+  }
 
-  nextRound() {
-    if (!this.roundDone) return;
-    if (this.roundIndex + 1 >= ROUNDS.length) {
-      this.showFinal();
+  function victory() {
+    stopTimer();
+    state.phase = 'victory';
+    HarborAudio.fanfare();
+    showOverlay('<h2>YOU FOUND THEM ALL!</h2>' +
+      '<p class="big">Final score: ' + state.score + '</p>' +
+      '<p>50 differences across 5 midnight scenes — the harbor keeps no secrets from you.</p>' +
+      '<button id="ovAgain" type="button">PLAY AGAIN</button>');
+    $('ovAgain').onclick = function () { state.score = 0; startRound(0, false); };
+  }
+
+  function timeUp() {
+    stopTimer();
+    state.phase = 'over';
+    HarborAudio.buzz();
+    showOverlay('<h2>TIME UP!</h2>' +
+      '<p class="big">' + state.scene.name + ' — ' + state.foundCount + ' / 10 found</p>' +
+      '<p>The fog rolls in and the differences hide again. Your score stays: ' + state.score + '</p>' +
+      '<button id="ovAgain" type="button">RETRY ROUND</button>' +
+      '<button id="ovTitle" type="button" class="ghost">Back to title</button>');
+    $('ovAgain').onclick = function () { startRound(state.roundIdx, true); };
+    $('ovTitle').onclick = function () { showTitle(); };
+  }
+
+  function showTitle() {
+    stopTimer();
+    state.phase = 'title';
+    state.roundIdx = 0;
+    state.scene = buildScene(0);
+    state.found = {};
+    state.foundCount = 0;
+    state.timeLeft = state.scene.timer;
+    state.hintsLeft = 3;
+    paint();
+    showOverlay('<h2>MIDNIGHT HARBOR</h2>' +
+      '<p class="big">Find 10 differences · 5 rounds</p>' +
+      '<p>Two pictures of the same night, side by side — but ten little things changed between them. ' +
+      'Click a difference on either picture to ring it. A wrong click costs 5 seconds. ' +
+      'Hints cost 50 points. Keys: <b>H</b> hint · <b>R</b> restart round · <b>N</b> next round · <b>M</b> mute.</p>' +
+      '<button id="ovStart" type="button">START HUNTING</button>');
+    $('ovStart').onclick = function () { state.score = 0; startRound(0, false); };
+  }
+
+  function nearestDiff(x, y) {
+    var best = -1, bestD = HIT_RADIUS;
+    var diffs = state.scene.diffs;
+    for (var i = 0; i < diffs.length; i++) {
+      if (state.found[i]) continue;
+      for (var s = 0; s < diffs[i].spots.length; s++) {
+        var dx = x - diffs[i].spots[s][0], dy = y - diffs[i].spots[s][1];
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+    }
+    return best;
+  }
+
+  function onPanelClick(ev, svg) {
+    if (state.phase !== 'play') return;
+    var rect = svg.getBoundingClientRect();
+    var x = (ev.clientX - rect.left) / rect.width * 640;
+    var y = (ev.clientY - rect.top) / rect.height * 420;
+    var idx = nearestDiff(x, y);
+    if (idx >= 0) { markFound(idx); return; }
+    state.streak = 0;
+    state.timeLeft = Math.max(0, state.timeLeft - 5);
+    HarborAudio.buzz();
+    var mark = '<g class="wrong-x"><line x1="' + (x - 12) + '" y1="' + (y - 12) + '" x2="' + (x + 12) + '" y2="' + (y + 12) + '"/>' +
+      '<line x1="' + (x + 12) + '" y1="' + (y - 12) + '" x2="' + (x - 12) + '" y2="' + (y + 12) + '"/></g>';
+    svg.insertAdjacentHTML('beforeend', mark);
+    setTimeout(function () {
+      var g = svg.querySelector('.wrong-x');
+      if (g) g.remove();
+    }, 600);
+    paint();
+    if (state.timeLeft <= 0) timeUp();
+  }
+
+  function useHint() {
+    if (state.phase !== 'play' || state.hintsLeft <= 0) return;
+    var next = -1;
+    for (var i = 0; i < state.scene.diffs.length; i++) {
+      if (!state.found[i]) { next = i; break; }
+    }
+    if (next < 0) return;
+    state.hintsLeft -= 1;
+    state.score = Math.max(0, state.score - 50);
+    state.hintIdx = next;
+    paint();
+    setTimeout(function () {
+      state.hintIdx = null;
+      paint();
+    }, 2000);
+  }
+
+  // Deterministic states for screenshots: ?round=1..5 &screen=play|clear|victory|title &found=0,3,5
+  function applyShotParams() {
+    var q = new URLSearchParams(window.location.search);
+    var round = Math.min(5, Math.max(1, parseInt(q.get('round') || '1', 10))) - 1;
+    var screen = q.get('screen') || 'play';
+    var foundList = (q.get('found') || '').split(',').filter(function (s) { return s !== ''; });
+    state.roundIdx = round;
+    state.scene = buildScene(round);
+    state.found = {};
+    state.foundCount = 0;
+    state.timeLeft = state.scene.timer;
+    state.hintsLeft = 3;
+    if (screen === 'title') { showTitle(); return; }
+    state.phase = 'play';
+    hideOverlay();
+    for (var i = 0; i < foundList.length; i++) {
+      var idx = parseInt(foundList[i], 10);
+      if (!isNaN(idx) && idx >= 0 && idx < state.scene.diffs.length && !state.found[idx]) {
+        state.found[idx] = true;
+        state.foundCount += 1;
+        state.score += 100;
+      }
+    }
+    if (screen === 'clear') {
+      state.foundCount = state.scene.diffs.length;
+      for (var j = 0; j < state.scene.diffs.length; j++) state.found[j] = true;
+      state.score = 1250;
+      state.phase = 'clear';
+      paint();
+      showOverlay('<h2>ROUND CLEAR!</h2><p class="big">' + state.scene.name + ' — all 10 differences found</p><p>Time bonus: +420 &nbsp;·&nbsp; Score: 1250</p>');
       return;
     }
-    this.loadRound(this.roundIndex + 1);
-  },
-
-  startTimer() {
-    this.stopTimer();
-    const self = this;
-    this.timerId = setInterval(() => {
-      if (self.roundDone || self.gameOver) return;
-      self.timeLeft -= 1;
-      self.totalTimeUsed += 1;
-      if (self.timeLeft <= 0) {
-        self.timeLeft = 0;
-        self.stopTimer();
-        self.onTimeout();
-      }
-      self.updateHud();
-    }, 1000);
-  },
-
-  stopTimer() {
-    if (this.timerId) {
-      clearInterval(this.timerId);
-      this.timerId = null;
+    if (screen === 'victory') {
+      state.score = 6420;
+      state.phase = 'victory';
+      paint();
+      showOverlay('<h2>YOU FOUND THEM ALL!</h2><p class="big">Final score: 6420</p><p>50 differences across 5 midnight scenes — the harbor keeps no secrets from you.</p>');
+      return;
     }
-  },
+    paint();
+  }
 
-  onTimeout() {
-    this.gameOver = true;
-    this.els.timeoutFound.textContent = this.found.length;
-    this.showOverlay(this.els.timeoutScreen);
-  },
-
-  panelCoords(canvas, e) {
-    const r = canvas.getBoundingClientRect();
-    return {
-      x: ((e.clientX - r.left) / r.width) * 560,
-      y: ((e.clientY - r.top) / r.height) * 420,
-    };
-  },
-
-  onPanelClick(e, canvas) {
-    if (!this.started || this.roundDone || this.gameOver) return;
-    const p = this.panelCoords(canvas, e);
-    const hit = this.allDiffs().find((d) => {
-      if (this.found.some((f) => f.id === d.id)) return false;
-      const dx = p.x - d.x;
-      const dy = p.y - d.y;
-      return Math.sqrt(dx * dx + dy * dy) <= d.r + 10; // tolerant radius
+  function init() {
+    $('svgL').addEventListener('click', function (ev) { onPanelClick(ev, $('svgL')); });
+    $('svgR').addEventListener('click', function (ev) { onPanelClick(ev, $('svgR')); });
+    $('hintBtn').addEventListener('click', useHint);
+    $('muteBtn').addEventListener('click', function () {
+      var m = HarborAudio.toggleMute();
+      $('muteBtn').textContent = m ? 'SOUND OFF' : 'SOUND ON';
     });
-    if (hit) {
-      this.found.push(hit);
-      this.score += 100;
-      SoundFX.chime();
-      this.updateHud();
-      this.render();
-      if (this.found.length === this.allDiffs().length) {
-        this.onRoundClear();
-      }
-    } else {
-      // wrong click: brief red X, -5 seconds, low buzz
-      this.wrongMarks.push({ x: p.x, y: p.y, at: Date.now() });
-      this.timeLeft = Math.max(0, this.timeLeft - 5);
-      SoundFX.buzz();
-      this.updateHud();
-      this.render();
-      const self = this;
-      setTimeout(() => {
-        self.wrongMarks = self.wrongMarks.filter((m) => Date.now() - m.at < 900);
-        self.render();
-      }, 650);
-    }
-  },
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'h' || ev.key === 'H') useHint();
+      else if (ev.key === 'r' || ev.key === 'R') { if (state.phase === 'play') startRound(state.roundIdx, true); }
+      else if (ev.key === 'n' || ev.key === 'N') {
+        if (state.phase === 'clear' && state.roundIdx < SCENES.length - 1) startRound(state.roundIdx + 1, true);
+      } else if (ev.key === 'm' || ev.key === 'M') $('muteBtn').click();
+    });
+    var q = new URLSearchParams(window.location.search);
+    if (q.has('round') || q.has('screen') || q.has('found')) applyShotParams();
+    else showTitle();
+    window.__game = {
+      state: state,
+      clickAt: function (x, y) {
+        var idx = nearestDiff(x, y);
+        if (idx >= 0) { markFound(idx); return idx; }
+        // a miss through the test hook costs the same as a real misclick
+        state.streak = 0;
+        state.timeLeft = Math.max(0, state.timeLeft - 5);
+        HarborAudio.buzz();
+        paint();
+        if (state.timeLeft <= 0) timeUp();
+        return -1;
+      },
+      startRound: startRound,
+      useHint: useHint
+    };
+    window.__shotReady = true;
+  }
 
-  useHint() {
-    if (!this.started || this.roundDone || this.gameOver) return;
-    if (this.hintsLeft <= 0) return;
-    const rest = this.unfound();
-    if (!rest.length) return;
-    this.hintsLeft -= 1;
-    this.score = Math.max(0, this.score - 50);
-    SoundFX.click();
-    this.pulse = rest[0];
-    this.pulseUntil = Date.now() + 2000;
-    this.updateHud();
-    this.render();
-    const self = this;
-    const tick = setInterval(() => {
-      if (Date.now() >= self.pulseUntil) {
-        self.pulse = null;
-        clearInterval(tick);
-        self.render();
-      } else {
-        self.render();
-      }
-    }, 120);
-  },
-
-  toggleMute() {
-    const muted = SoundFX.toggleMute();
-    this.els.muteBtn.textContent = muted ? '🔇 Muted' : '🔊 Sound';
-  },
-
-  onKey(e) {
-    const k = e.key.toLowerCase();
-    if (k === 'h') this.useHint();
-    else if (k === 'n') this.nextRound();
-    else if (k === 'r') this.restartRound();
-    else if (k === 'm') this.toggleMute();
-  },
-
-  onRoundClear() {
-    this.roundDone = true;
-    this.stopTimer();
-    const bonus = this.timeLeft * 2;
-    this.score += bonus;
-    this.roundScores.push(this.score);
-    SoundFX.fanfare();
-    const self = this;
-    setTimeout(() => {
-      self.els.clearTitle.textContent = self.currentRound().name + ' — Clear!';
-      self.els.clearFound.textContent = self.found.length + ' / ' + self.allDiffs().length;
-      self.els.clearTime.textContent = self.timeLeft + 's left';
-      self.els.clearBonus.textContent = '+' + bonus;
-      self.els.clearScore.textContent = self.score;
-      self.els.nextBtn.textContent =
-        self.roundIndex + 1 >= ROUNDS.length ? 'See final results' : 'Next round →';
-      self.showOverlay(self.els.clearScreen);
-      self.updateHud();
-    }, 600);
-  },
-
-  showFinal() {
-    this.gameOver = true;
-    this.stopTimer();
-    const best = this.roundScores.length ? Math.max.apply(null, this.roundScores) : 0;
-    this.els.finalScore.textContent = this.score;
-    this.els.finalBest.textContent = best;
-    this.els.finalTime.textContent = this.totalTimeUsed + 's';
-    this.els.finalRounds.textContent = this.roundScores.length + ' / ' + ROUNDS.length;
-    this.showOverlay(this.els.finalScreen);
-  },
-
-  showTitle() {
-    this.hideAllOverlays();
-    this.roundIndex = 0;
-    this.found = [];
-    this.timeLeft = ROUNDS[0].timer;
-    this.score = 0;
-    this.hintsLeft = 3;
-    this.updateHud();
-    this.render();
-    this.showOverlay(this.els.titleScreen);
-  },
-
-  hideAllOverlays() {
-    for (const el of [this.els.titleScreen, this.els.clearScreen, this.els.finalScreen, this.els.timeoutScreen]) {
-      el.classList.add('hidden');
-    }
-  },
-
-  showOverlay(el) {
-    this.hideAllOverlays();
-    el.classList.remove('hidden');
-  },
-
-  updateHud() {
-    const r = this.currentRound();
-    this.els.hudRound.textContent = r.name;
-    this.els.hudFound.textContent = 'Found ' + this.found.length + ' / ' + r.diffs.length;
-    this.els.hudTimer.textContent = '⏱ ' + this.timeLeft + 's';
-    this.els.hudScore.textContent = '★ ' + this.score;
-    this.els.hintBtn.textContent = '💡 Hint (' + this.hintsLeft + ')';
-    this.els.hudTimer.classList.toggle('danger', this.timeLeft <= 20);
-  },
-
-  render() {
-    const now = Date.now();
-    const pulse = this.pulse && now < this.pulseUntil ? this.pulse : null;
-    const leftCtx = this.els.left.getContext('2d');
-    const rightCtx = this.els.right.getContext('2d');
-    drawPanel(leftCtx, this.roundIndex, new Set(), this.found, pulse, now);
-    drawPanel(rightCtx, this.roundIndex, new Set(this.allDiffs().map((d) => d.id)), this.found, pulse, now);
-    // wrong-click red X marks on both panels at the same spot
-    for (const m of this.wrongMarks) {
-      for (const ctx of [leftCtx, rightCtx]) {
-        ctx.strokeStyle = '#e63946';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(m.x - 10, m.y - 10);
-        ctx.lineTo(m.x + 10, m.y + 10);
-        ctx.moveTo(m.x + 10, m.y - 10);
-        ctx.lineTo(m.x - 10, m.y + 10);
-        ctx.stroke();
-      }
-    }
-  },
-};
+  return { init: init };
+})();
