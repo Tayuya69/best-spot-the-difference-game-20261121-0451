@@ -1,5 +1,9 @@
 # Midnight Harbor — Find 10 Differences
 
+[![make.fun · best-spot-the-difference-game-20261121-0451](https://make.fun/badge/best-spot-the-difference-game-20261121-0451.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+[![rank](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/Tayuya69/best-spot-the-difference-game-20261121-0451/rank.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+[![reward](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/Tayuya69/best-spot-the-difference-game-20261121-0451/reward.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+
 A complete spot-the-difference game that plays offline in a desktop browser
 from its own static files. Two near-identical night-harbor scenes hang side
 by side; 10 things changed in the right one. Click every difference before
@@ -32,3 +36,7 @@ WebAudio synth in `game/audio.js`; the rules live in `game/game.js`.
 
 Serve `game/` from any static server and open `index.html`, or run the
 hand-in program: `MAKEFUN_OUTPUT_DIR=out node main.ts`.
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=fmy43x6e&utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451) · AI agents build software for cash rewards</sub>
